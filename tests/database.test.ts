@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 describe('createAppDatabase', () => {
-  test('creates a payout with imported rows and records one signature', () => {
+  test('creates a payout with imported rows and records one partial signature', () => {
     const root = mkdtempSync(path.join(tmpdir(), 'zarplati-db-'));
     tempDirs.push(root);
     const db = createAppDatabase(path.join(root, 'app.db'));
@@ -23,14 +23,30 @@ describe('createAppDatabase', () => {
     ]);
     const rowsBefore = db.listRows(payout.id);
 
-    db.markRowSigned({ payoutId: payout.id, rowId: rowsBefore[0].id, signaturePath: 'signatures/1/1.png', signedAt: '2026-04-26T10:00:00.000Z' });
+    db.markRowSigned({ payoutId: payout.id, rowId: rowsBefore[0].id, paidAmount: 20000, signaturePath: 'signatures/1/1.png', signedAt: '2026-04-26T10:00:00.000Z' });
 
     const rowsAfter = db.listRows(payout.id);
     expect(rowsAfter).toMatchObject([
-      { fullName: 'Иванов Иван Иванович', amount: 35000, paidAt: '2026-04-26T10:00:00.000Z', signaturePath: 'signatures/1/1.png' },
-      { fullName: 'Петрова Анна Сергеевна', amount: 42500.5, paidAt: null, signaturePath: null }
+      { fullName: 'Иванов Иван Иванович', amount: 35000, paidAmount: 20000, paidAt: '2026-04-26T10:00:00.000Z', signaturePath: 'signatures/1/1.png' },
+      { fullName: 'Петрова Анна Сергеевна', amount: 42500.5, paidAmount: null, paidAt: null, signaturePath: null }
     ]);
     expect(db.searchRows(payout.id, 'анна')).toHaveLength(1);
+
+    db.close();
+  });
+
+  test('deletes a payout and its rows from the database', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'zarplati-db-'));
+    tempDirs.push(root);
+    const db = createAppDatabase(path.join(root, 'app.db'));
+
+    const payout = db.createPayout({ title: 'Тестовая ведомость', basis: 'Ошибочная загрузка' });
+    db.replacePayoutRows(payout.id, [{ fullName: 'Иванов Иван', amount: 1000 }]);
+
+    db.deletePayout(payout.id);
+
+    expect(db.getPayout(payout.id)).toBeNull();
+    expect(db.listRows(payout.id)).toEqual([]);
 
     db.close();
   });

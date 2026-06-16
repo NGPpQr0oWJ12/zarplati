@@ -7,7 +7,7 @@
     "dev": "tsx server/index.ts",
     "dev:client": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
-    "start": "NODE_ENV=production tsx server/index.ts",
+    "start": "tsx server/index.ts --production",
     "test": "vitest run"
   },
   "dependencies": {
