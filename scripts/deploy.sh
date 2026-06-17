@@ -16,29 +16,45 @@ MODE="${MODE:-}"
 REPO_URL="${REPO_URL:-}"
 ADMIN_LOGIN="${ADMIN_LOGIN:-}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
+CURRENT_STEP="startup"
+
+on_error() {
+  local code=$?
+  echo >&2
+  echo "Деплой остановлен на шаге: ${CURRENT_STEP}" >&2
+  echo "Код ошибки: ${code}" >&2
+  exit "$code"
+}
+
+trap on_error ERR
+
+step() {
+  CURRENT_STEP="$1"
+  echo
+  echo "==> ${CURRENT_STEP}"
+}
 
 usage() {
   cat <<'USAGE'
-Deploy zarplati on a Linux server with systemd.
+Установка Zarplati на Linux-сервер с systemd.
 
-Usage:
+Использование:
   sudo bash scripts/deploy.sh
-  curl -fsSL https://raw.githubusercontent.com/NGPpQr0oWJ12/zarplati/main/scripts/deploy.sh \
-    | sudo bash -s -- --repo https://github.com/NGPpQr0oWJ12/zarplati.git
+  curl -fL --progress-bar https://raw.githubusercontent.com/NGPpQr0oWJ12/zarplati/main/scripts/deploy.sh | sudo bash -s -- --repo https://github.com/NGPpQr0oWJ12/zarplati.git
 
-Options:
-  --mode deploy          Deployment mode. Only deploy is supported.
-  --repo URL             Public GitHub repository clone URL.
-  --branch NAME          Git branch to deploy. Default: main.
-  --port PORT            Local application port.
-  --host HOST            Bind host. Default: 127.0.0.1.
-  --app-home PATH        Base application home. Default: /home/zarplati.
-  --app-dir PATH         Code directory. Default: /home/zarplati/app.
-  --storage-dir PATH     Data directory. Default: /home/zarplati/data.
-  --env-file PATH        dotenv file. Default: /home/zarplati/config/.env.
-  --service NAME         systemd service name. Default: zarplati.
-  --admin-login LOGIN    Admin login. Required.
-  --admin-password PASS  Admin password. Required.
+Параметры:
+  --mode deploy          Режим установки. Сейчас поддерживается только deploy.
+  --repo URL             URL публичного GitHub-репозитория.
+  --branch NAME          Ветка Git. По умолчанию: main.
+  --port PORT            Локальный порт приложения.
+  --host HOST            Адрес прослушивания. По умолчанию: 127.0.0.1.
+  --app-home PATH        Корневая папка приложения. По умолчанию: /home/zarplati.
+  --app-dir PATH         Папка кода. По умолчанию: /home/zarplati/app.
+  --storage-dir PATH     Папка базы и подписей. По умолчанию: /home/zarplati/data.
+  --env-file PATH        dotenv-файл. По умолчанию: /home/zarplati/config/.env.
+  --service NAME         Имя systemd-сервиса. По умолчанию: zarplati.
+  --admin-login LOGIN    Логин администратора. Обязательный параметр.
+  --admin-password PASS  Пароль администратора. Обязательный параметр.
 USAGE
 }
 
@@ -57,7 +73,7 @@ while [[ $# -gt 0 ]]; do
     --admin-login) ADMIN_LOGIN="${2:-}"; shift 2 ;;
     --admin-password) ADMIN_PASSWORD="${2:-}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
-    *) echo "Unknown option: $1" >&2; usage; exit 2 ;;
+    *) echo "Неизвестный параметр: $1" >&2; usage; exit 2 ;;
   esac
 done
 
@@ -69,7 +85,7 @@ ENV_DIR="$(dirname "$ENV_FILE")"
 
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
-    echo "Run this script as root: sudo bash scripts/deploy.sh" >&2
+    echo "Запустите скрипт от root: sudo bash scripts/deploy.sh" >&2
     exit 1
   fi
 }
@@ -77,7 +93,7 @@ require_root() {
 validate_port() {
   local value="$1"
   if ! [[ "$value" =~ ^[0-9]+$ ]] || (( value < 1 || value > 65535 )); then
-    echo "Port must be an integer from 1 to 65535." >&2
+    echo "Порт должен быть целым числом от 1 до 65535." >&2
     exit 1
   fi
 }
@@ -99,11 +115,11 @@ prompt_if_empty() {
       printf -v "$variable_name" '%s' "$default_value"
       return
     fi
-    echo "Missing required value: ${variable_name}" >&2
+    echo "Не указано обязательное значение: ${variable_name}" >&2
     exit 1
   fi
 
-  local answer
+  local answer=""
   if [[ -n "$default_value" ]]; then
     read -r -p "${prompt} [${default_value}]: " answer < /dev/tty
     printf -v "$variable_name" '%s' "${answer:-$default_value}"
@@ -113,17 +129,37 @@ prompt_if_empty() {
   fi
 }
 
+prompt_mode() {
+  if [[ -n "$MODE" ]]; then
+    return
+  fi
+  if ! can_prompt; then
+    MODE="deploy"
+    return
+  fi
+
+  local answer=""
+  echo
+  echo "Выберите режим установки:"
+  echo "  1) deploy - установить или переустановить приложение"
+  read -r -p "Введите номер или название режима [1]: " answer < /dev/tty
+  case "${answer:-1}" in
+    1|deploy) MODE="deploy" ;;
+    *) echo "Неизвестный режим: ${answer}. Доступен только 1 или deploy." >&2; exit 1 ;;
+  esac
+}
+
 prompt_password_if_empty() {
   if [[ -n "$ADMIN_PASSWORD" ]]; then
     return
   fi
   if ! can_prompt; then
-    echo "Missing required value: ADMIN_PASSWORD" >&2
+    echo "Не указано обязательное значение: ADMIN_PASSWORD" >&2
     exit 1
   fi
-  local answer
+  local answer=""
   while [[ -z "$answer" ]]; do
-    read -r -s -p "Admin password: " answer < /dev/tty
+    read -r -s -p "Пароль администратора: " answer < /dev/tty
     echo
   done
   ADMIN_PASSWORD="$answer"
@@ -140,22 +176,27 @@ detect_repo_url() {
 
 install_base_packages() {
   if command -v apt-get >/dev/null 2>&1; then
+    echo "Используется apt-get."
     apt-get update
     DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl git openssl
     return
   fi
   if command -v dnf >/dev/null 2>&1; then
+    echo "Используется dnf."
     dnf install -y ca-certificates curl git openssl
     return
   fi
   if command -v yum >/dev/null 2>&1; then
+    echo "Используется yum."
     yum install -y ca-certificates curl git openssl
     return
   fi
   if command -v pacman >/dev/null 2>&1; then
+    echo "Используется pacman."
     pacman -Sy --noconfirm ca-certificates curl git openssl
     return
   fi
+  echo "Поддерживаемый пакетный менеджер не найден; установка системных пакетов пропущена."
 }
 
 node_major_version() {
@@ -166,11 +207,13 @@ ensure_node() {
   local major
   major="$(node_major_version)"
   if (( major >= 20 )); then
+    echo "Node.js $(node -v) уже установлен."
     return
   fi
 
+  echo "Устанавливается Node.js 22.x, потому что требуется Node.js 20+."
   if command -v apt-get >/dev/null 2>&1; then
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+    curl -fL --progress-bar https://deb.nodesource.com/setup_22.x | bash -
     DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
   elif command -v dnf >/dev/null 2>&1; then
     dnf install -y nodejs npm
@@ -179,13 +222,13 @@ ensure_node() {
   elif command -v pacman >/dev/null 2>&1; then
     pacman -Sy --noconfirm nodejs npm
   else
-    echo "Install Node.js 20+ and rerun this script." >&2
+    echo "Установите Node.js 20+ и запустите скрипт повторно." >&2
     exit 1
   fi
 
   major="$(node_major_version)"
   if (( major < 20 )); then
-    echo "Node.js 20+ is required, found $(node -v 2>/dev/null || echo missing)." >&2
+    echo "Требуется Node.js 20+, найдено: $(node -v 2>/dev/null || echo не найден)." >&2
     exit 1
   fi
 }
@@ -208,9 +251,9 @@ open_firewall_port() {
   fi
 
   if [[ "$opened" -eq 0 ]]; then
-    echo "No active ufw/firewalld detected; no OS firewall rule was changed."
+    echo "Активный ufw/firewalld не найден; правила системного firewall не изменялись."
   else
-    echo "Opened TCP and UDP port ${port} in the active OS firewall."
+    echo "Открыт TCP- и UDP-порт ${port} в активном системном firewall."
   fi
 }
 
@@ -236,22 +279,26 @@ create_user_and_dirs() {
 
 checkout_code() {
   if [[ -d "$APP_DIR/.git" ]]; then
+    echo "Обновляется существующая копия в ${APP_DIR}."
     git -C "$APP_DIR" fetch --prune origin
     git -C "$APP_DIR" checkout "$BRANCH"
     git -C "$APP_DIR" reset --hard "origin/${BRANCH}"
   else
     if [[ -e "$APP_DIR" ]] && [[ -n "$(find "$APP_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
-      echo "${APP_DIR} exists and is not an empty Git checkout." >&2
+      echo "${APP_DIR} уже существует и не является пустой Git-копией." >&2
       exit 1
     fi
-    git clone --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
+    echo "Клонируется ${REPO_URL} в ${APP_DIR}."
+    git clone --progress --branch "$BRANCH" "$REPO_URL" "$APP_DIR"
   fi
   chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 }
 
 install_app() {
   cd "$APP_DIR"
+  echo "Устанавливаются зависимости Node через npm ci."
   npm ci
+  echo "Собираются production-файлы."
   npm run build
   chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 }
@@ -265,6 +312,7 @@ quote_env_value() {
 }
 
 write_environment() {
+  echo "Записывается dotenv-конфиг в ${ENV_FILE}. Пароль в вывод не печатается."
   umask 077
   cat > "$ENV_FILE" <<ENV
 NODE_ENV=production
@@ -282,6 +330,7 @@ write_service() {
   local node_bin
   node_bin="$(command -v node)"
 
+  echo "Записывается systemd-сервис /etc/systemd/system/${SERVICE_NAME}.service."
   cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<SERVICE
 [Unit]
 Description=Zarplati payout app
@@ -312,49 +361,61 @@ SERVICE
 
   systemctl daemon-reload
   systemctl enable --now "${SERVICE_NAME}.service"
+  systemctl --no-pager --full status "${SERVICE_NAME}.service" || true
 }
 
 main() {
+  step "Запуск установки Zarplati"
   require_root
   if [[ "$(uname -s)" != "Linux" ]]; then
-    echo "This deploy script supports Linux servers only." >&2
+    echo "Скрипт деплоя поддерживает только Linux-серверы." >&2
     exit 1
   fi
 
+  step "Чтение параметров установки"
   detect_repo_url
-  prompt_if_empty MODE "Select mode (deploy)" "deploy"
+  prompt_mode
   if [[ "$MODE" != "deploy" ]]; then
-    echo "Only deploy mode is supported by this script." >&2
+    echo "Сейчас поддерживается только режим deploy." >&2
     exit 1
   fi
-  prompt_if_empty REPO_URL "Public GitHub repo URL"
-  prompt_if_empty PORT "Application port" "3000"
+  prompt_if_empty REPO_URL "URL публичного GitHub-репозитория"
+  prompt_if_empty PORT "Порт приложения" "3000"
   validate_port "$PORT"
-  prompt_if_empty ADMIN_LOGIN "Admin login"
+  prompt_if_empty ADMIN_LOGIN "Логин администратора"
   prompt_password_if_empty
 
+  step "Установка системных пакетов"
   install_base_packages
+  step "Проверка Node.js"
   ensure_node
+  step "Создание пользователя и папок"
   create_user_and_dirs
+  step "Загрузка кода приложения"
   checkout_code
+  step "Установка зависимостей и сборка"
   install_app
+  step "Запись dotenv-файла"
   write_environment
+  step "Установка systemd-сервиса"
   write_service
+  step "Открытие порта в firewall"
   open_firewall_port "$PORT"
 
+  step "Установка завершена"
   cat <<SUMMARY
 
-Deploy complete.
-Service: ${SERVICE_NAME}
-Home: ${APP_HOME}
-Code: ${APP_DIR}
-Data: ${STORAGE_DIR}
-Env: ${ENV_FILE}
-URL: http://${HOST}:${PORT}
-Admin login: ${ADMIN_LOGIN}
-Admin password: saved to ${ENV_FILE}
+Установка завершена.
+Сервис: ${SERVICE_NAME}
+Домашняя папка: ${APP_HOME}
+Код: ${APP_DIR}
+Данные: ${STORAGE_DIR}
+Dotenv: ${ENV_FILE}
+Адрес: http://${HOST}:${PORT}
+Логин администратора: ${ADMIN_LOGIN}
+Пароль администратора: сохранен в ${ENV_FILE}
 
-Useful commands:
+Полезные команды:
   systemctl status ${SERVICE_NAME}
   journalctl -u ${SERVICE_NAME} -f
   systemctl restart ${SERVICE_NAME}
