@@ -10,7 +10,7 @@ STORAGE_DIR="${STORAGE_DIR:-}"
 ENV_DIR="${ENV_DIR:-}"
 ENV_FILE="${ENV_FILE:-}"
 BRANCH="${BRANCH:-main}"
-HOST="${HOST:-127.0.0.1}"
+HOST="${HOST:-0.0.0.0}"
 PORT="${PORT:-}"
 MODE="${MODE:-}"
 REPO_URL="${REPO_URL:-}"
@@ -47,7 +47,7 @@ usage() {
   --repo URL             URL публичного GitHub-репозитория.
   --branch NAME          Ветка Git. По умолчанию: main.
   --port PORT            Локальный порт приложения.
-  --host HOST            Адрес прослушивания. По умолчанию: 127.0.0.1.
+  --host HOST            Адрес прослушивания. По умолчанию: 0.0.0.0, доступ из локальной сети.
   --app-home PATH        Корневая папка приложения. По умолчанию: /home/zarplati.
   --app-dir PATH         Папка кода. По умолчанию: /home/zarplati/app.
   --storage-dir PATH     Папка базы и подписей. По умолчанию: /home/zarplati/data.
@@ -381,6 +381,24 @@ quote_env_value() {
   printf '"%s"' "$value"
 }
 
+detect_access_host() {
+  local ip
+  if [[ "$HOST" != "0.0.0.0" && "$HOST" != "::" ]]; then
+    printf '%s' "$HOST"
+    return
+  fi
+
+  for ip in $(hostname -I 2>/dev/null || true); do
+    case "$ip" in
+      127.*|::1) continue ;;
+      *:*) continue ;;
+      *) printf '%s' "$ip"; return ;;
+    esac
+  done
+
+  printf '%s' "$HOST"
+}
+
 write_environment() {
   echo "Записывается dotenv-конфиг в ${ENV_FILE}. Пароль в вывод не печатается."
   umask 077
@@ -473,6 +491,8 @@ main() {
   open_firewall_port "$PORT"
 
   step "Установка завершена"
+  local access_host
+  access_host="$(detect_access_host)"
   cat <<SUMMARY
 
 Установка завершена.
@@ -481,7 +501,8 @@ main() {
 Код: ${APP_DIR}
 Данные: ${STORAGE_DIR}
 Dotenv: ${ENV_FILE}
-Адрес: http://${HOST}:${PORT}
+Адрес в локальной сети: http://${access_host}:${PORT}
+Прослушивание: ${HOST}:${PORT}
 Логин администратора: ${ADMIN_LOGIN}
 Пароль администратора: сохранен в ${ENV_FILE}
 
