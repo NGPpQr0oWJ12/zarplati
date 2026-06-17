@@ -62,16 +62,28 @@ PORT=3001 npm run dev
 
 ## Автодеплой с GitHub
 
-Скрипты лежат в `scripts/deploy.sh` и `scripts/update.sh`. Они рассчитаны на Linux-сервер с `systemd` и публичный GitHub-репозиторий.
+Скрипты лежат в `scripts/deploy.sh` и `scripts/update.sh`. Они рассчитаны на Linux-сервер с `systemd` и публичный репозиторий [NGPpQr0oWJ12/zarplati](https://github.com/NGPpQr0oWJ12/zarplati).
 
-Установка из GitHub:
+Установка одной bash-командой:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/deploy.sh \
-  | sudo bash -s -- --repo https://github.com/<owner>/<repo>.git
+curl -fsSL https://raw.githubusercontent.com/NGPpQr0oWJ12/zarplati/main/scripts/deploy.sh \
+  | sudo bash -s -- --repo https://github.com/NGPpQr0oWJ12/zarplati.git
 ```
 
 В интерактивном CLI-режиме скрипт попросит режим `deploy`, порт приложения, логин и пароль администратора. По умолчанию production-сервис слушает `127.0.0.1`, то есть приложение доступно только локально на сервере: `http://127.0.0.1:<порт>`.
+
+Пример установки без вопросов, на порт `3000`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/NGPpQr0oWJ12/zarplati/main/scripts/deploy.sh \
+  | sudo bash -s -- \
+    --mode deploy \
+    --repo https://github.com/NGPpQr0oWJ12/zarplati.git \
+    --port 3000 \
+    --admin-login admin \
+    --admin-password 'замените-на-свой-пароль'
+```
 
 При установке скрипт:
 
@@ -85,12 +97,12 @@ curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/deploy.
 Обновление уже установленного сервера:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/update.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/NGPpQr0oWJ12/zarplati/main/scripts/update.sh | sudo bash
 ```
 
 Если используются нестандартные путь, ветка или имя сервиса:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/update.sh \
+curl -fsSL https://raw.githubusercontent.com/NGPpQr0oWJ12/zarplati/main/scripts/update.sh \
   | sudo bash -s -- --app-dir /opt/zarplati --branch main --service zarplati
 ```
