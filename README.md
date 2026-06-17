@@ -91,6 +91,8 @@ curl -fL --progress-bar https://raw.githubusercontent.com/NGPpQr0oWJ12/zarplati/
 - открывает введенный порт для TCP и UDP в активном `ufw` или `firewalld`, если такой firewall включен;
 - не пишет файловые runtime-логи, сервис уходит в `journald` с rate limit.
 
+Если установка остановилась на шаге `Установка системных пакетов` с ошибкой `mirror.docker.ru`, значит на сервере прописано недоступное Ubuntu-зеркало. Новый `deploy.sh` делает резервную копию apt source-файла, заменяет только `mirror.docker.ru/ubuntu` на `archive.ubuntu.com/ubuntu` и повторяет установку пакетов.
+
 Обновление уже установленного сервера:
 
 ```bash

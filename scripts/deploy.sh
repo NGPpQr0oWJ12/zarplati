@@ -174,11 +174,67 @@ detect_repo_url() {
   fi
 }
 
+repair_ubuntu_apt_mirror() {
+  local backup_suffix
+  local changed=0
+  local file
+  local files=(/etc/apt/sources.list /etc/apt/sources.list.d/*.list)
+
+  backup_suffix="$(date +%Y%m%d%H%M%S)"
+  for file in "${files[@]}"; do
+    [[ -f "$file" ]] || continue
+    if grep -qE 'https?://mirror\.docker\.ru/ubuntu' "$file"; then
+      cp -a "$file" "${file}.bak-${backup_suffix}"
+      sed -i \
+        -e 's#http://mirror.docker.ru/ubuntu#http://archive.ubuntu.com/ubuntu#g' \
+        -e 's#https://mirror.docker.ru/ubuntu#http://archive.ubuntu.com/ubuntu#g' \
+        "$file"
+      echo "Источник apt исправлен: ${file}. Резервная копия: ${file}.bak-${backup_suffix}"
+      changed=1
+    fi
+  done
+
+  if [[ "$changed" -eq 1 ]]; then
+    return 0
+  fi
+  return 1
+}
+
+apt_install_base_packages() {
+  echo "Используется apt-get."
+  if ! apt-get -o Acquire::Retries=3 update; then
+    echo
+    echo "apt-get update завершился с ошибкой. Проверяю известную проблему с mirror.docker.ru/ubuntu."
+    if repair_ubuntu_apt_mirror; then
+      echo "Повторяю apt-get update после замены недоступного Ubuntu mirror."
+      apt-get -o Acquire::Retries=3 update
+    else
+      echo "Автоматически исправить apt sources не удалось." >&2
+      return 1
+    fi
+  fi
+
+  if DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --fix-missing ca-certificates curl git openssl; then
+    return
+  fi
+
+  echo
+  echo "apt-get не смог скачать часть пакетов. Проверяю известную проблему с mirror.docker.ru/ubuntu."
+  if repair_ubuntu_apt_mirror; then
+    echo "Повторяю apt-get update/install после замены недоступного Ubuntu mirror."
+    apt-get -o Acquire::Retries=3 update
+    DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --fix-missing ca-certificates curl git openssl
+    return
+  fi
+
+  echo "Автоматически исправить apt sources не удалось." >&2
+  echo "Проверьте /etc/apt/sources.list и /etc/apt/sources.list.d/*.list, затем повторите установку." >&2
+  return 1
+}
+
 install_base_packages() {
   if command -v apt-get >/dev/null 2>&1; then
-    echo "Используется apt-get."
-    apt-get update
-    DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates curl git openssl
+    apt_install_base_packages
     return
   fi
   if command -v dnf >/dev/null 2>&1; then
