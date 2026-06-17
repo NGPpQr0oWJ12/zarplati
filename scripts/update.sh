@@ -57,7 +57,12 @@ git fetch --prune origin
 git checkout "$BRANCH"
 git reset --hard "origin/${BRANCH}"
 echo "Устанавливаются зависимости."
-npm ci
+if command -v g++-10 >/dev/null 2>&1 && command -v gcc-10 >/dev/null 2>&1; then
+  echo "Для native-модулей используется gcc-10/g++-10 с поддержкой C++20."
+  CC=gcc-10 CXX=g++-10 npm ci
+else
+  npm ci
+fi
 echo "Собираются production-файлы."
 npm run build
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"

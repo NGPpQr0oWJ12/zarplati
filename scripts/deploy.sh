@@ -214,7 +214,7 @@ apt_install_base_packages() {
     fi
   fi
 
-  if DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --fix-missing ca-certificates curl git openssl; then
+  if DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --fix-missing ca-certificates curl git openssl build-essential python3 make gcc-10 g++-10; then
     return
   fi
 
@@ -223,7 +223,7 @@ apt_install_base_packages() {
   if repair_ubuntu_apt_mirror; then
     echo "Повторяю apt-get update/install после замены недоступного Ubuntu mirror."
     apt-get -o Acquire::Retries=3 update
-    DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --fix-missing ca-certificates curl git openssl
+    DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 install -y --fix-missing ca-certificates curl git openssl build-essential python3 make gcc-10 g++-10
     return
   fi
 
@@ -239,17 +239,17 @@ install_base_packages() {
   fi
   if command -v dnf >/dev/null 2>&1; then
     echo "Используется dnf."
-    dnf install -y ca-certificates curl git openssl
+    dnf install -y ca-certificates curl git openssl gcc gcc-c++ make python3
     return
   fi
   if command -v yum >/dev/null 2>&1; then
     echo "Используется yum."
-    yum install -y ca-certificates curl git openssl
+    yum install -y ca-certificates curl git openssl gcc gcc-c++ make python3
     return
   fi
   if command -v pacman >/dev/null 2>&1; then
     echo "Используется pacman."
-    pacman -Sy --noconfirm ca-certificates curl git openssl
+    pacman -Sy --noconfirm ca-certificates curl git openssl base-devel python
     return
   fi
   echo "Поддерживаемый пакетный менеджер не найден; установка системных пакетов пропущена."
@@ -353,7 +353,12 @@ checkout_code() {
 install_app() {
   cd "$APP_DIR"
   echo "Устанавливаются зависимости Node через npm ci."
-  npm ci
+  if command -v g++-10 >/dev/null 2>&1 && command -v gcc-10 >/dev/null 2>&1; then
+    echo "Для native-модулей используется gcc-10/g++-10 с поддержкой C++20."
+    CC=gcc-10 CXX=g++-10 npm ci
+  else
+    npm ci
+  fi
   echo "Собираются production-файлы."
   npm run build
   chown -R "$APP_USER:$APP_USER" "$APP_DIR"

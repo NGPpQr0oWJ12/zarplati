@@ -88,6 +88,7 @@ curl -fL --progress-bar https://raw.githubusercontent.com/NGPpQr0oWJ12/zarplati/
 - хранит базу и подписи в `/home/zarplati/data`;
 - пишет dotenv-настройки в `/home/zarplati/config/.env`;
 - создает `systemd`-сервис `zarplati`;
+- ставит build-зависимости для native-модуля SQLite, включая `gcc-10`/`g++-10` на Ubuntu 20.04;
 - открывает введенный порт для TCP и UDP в активном `ufw` или `firewalld`, если такой firewall включен;
 - не пишет файловые runtime-логи, сервис уходит в `journald` с rate limit.
 
