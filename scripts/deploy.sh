@@ -333,12 +333,16 @@ create_user_and_dirs() {
   chmod 750 "$APP_DIR"
 }
 
+git_app() {
+  git -c "safe.directory=${APP_DIR}" -C "$APP_DIR" "$@"
+}
+
 checkout_code() {
   if [[ -d "$APP_DIR/.git" ]]; then
     echo "Обновляется существующая копия в ${APP_DIR}."
-    git -C "$APP_DIR" fetch --prune origin
-    git -C "$APP_DIR" checkout "$BRANCH"
-    git -C "$APP_DIR" reset --hard "origin/${BRANCH}"
+    git_app fetch --prune origin
+    git_app checkout "$BRANCH"
+    git_app reset --hard "origin/${BRANCH}"
   else
     if [[ -e "$APP_DIR" ]] && [[ -n "$(find "$APP_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
       echo "${APP_DIR} уже существует и не является пустой Git-копией." >&2

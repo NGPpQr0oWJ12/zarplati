@@ -36,6 +36,10 @@ done
 
 APP_DIR="${APP_DIR:-${APP_HOME}/app}"
 
+git_app() {
+  git -c "safe.directory=${APP_DIR}" -C "$APP_DIR" "$@"
+}
+
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Запустите скрипт от root: sudo bash scripts/update.sh" >&2
   exit 1
@@ -51,11 +55,11 @@ if ! systemctl cat "${SERVICE_NAME}.service" >/dev/null 2>&1; then
   exit 1
 fi
 
-cd "$APP_DIR"
 echo "Обновляется код из ветки ${BRANCH}."
-git fetch --prune origin
-git checkout "$BRANCH"
-git reset --hard "origin/${BRANCH}"
+git_app fetch --prune origin
+git_app checkout "$BRANCH"
+git_app reset --hard "origin/${BRANCH}"
+cd "$APP_DIR"
 echo "Устанавливаются зависимости."
 if command -v g++-10 >/dev/null 2>&1 && command -v gcc-10 >/dev/null 2>&1; then
   echo "Для native-модулей используется gcc-10/g++-10 с поддержкой C++20."
