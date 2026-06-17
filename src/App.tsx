@@ -34,8 +34,8 @@ function parseMoneyInput(value: string) {
 }
 
 function LoginScreen({ onLogin }: { onLogin: () => void }) {
-  const [login, setLogin] = useState('admin');
-  const [password, setPassword] = useState('admin');
+  const [login, setLogin] = useState('ikusova');
+  const [password, setPassword] = useState('123!@#QWEqwe!!!');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -58,7 +58,7 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
       <form className="login-card" onSubmit={handleSubmit}>
         <p className="kicker">Локальная ведомость</p>
         <h1>Вход в выплаты</h1>
-        <p className="muted">Используйте учетную запись бухгалтерии. По умолчанию: admin / admin.</p>
+        <p className="muted">Используйте учетную запись бухгалтерии. По умолчанию: ikusova / 123!@#QWEqwe!!!.</p>
         <label>
           Логин
           <input value={login} onChange={(event) => setLogin(event.target.value)} autoComplete="username" />

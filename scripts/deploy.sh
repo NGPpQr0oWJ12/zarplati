@@ -4,16 +4,19 @@ set -Eeuo pipefail
 APP_NAME="${APP_NAME:-zarplati}"
 SERVICE_NAME="${SERVICE_NAME:-zarplati}"
 APP_USER="${APP_USER:-zarplati}"
-APP_DIR="${APP_DIR:-/opt/zarplati}"
-STORAGE_DIR="${STORAGE_DIR:-/var/lib/zarplati}"
-ENV_DIR="${ENV_DIR:-/etc/zarplati}"
-ENV_FILE="${ENV_FILE:-${ENV_DIR}/zarplati.env}"
+APP_HOME="${APP_HOME:-/home/${APP_USER}}"
+APP_DIR="${APP_DIR:-}"
+STORAGE_DIR="${STORAGE_DIR:-}"
+ENV_DIR="${ENV_DIR:-}"
+ENV_FILE="${ENV_FILE:-}"
 BRANCH="${BRANCH:-main}"
 HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-}"
 MODE="${MODE:-}"
 REPO_URL="${REPO_URL:-}"
-ADMIN_LOGIN="${ADMIN_LOGIN:-admin}"
+DEFAULT_ADMIN_LOGIN="${DEFAULT_ADMIN_LOGIN:-ikusova}"
+DEFAULT_ADMIN_PASSWORD="${DEFAULT_ADMIN_PASSWORD:-123!@#QWEqwe!!!}"
+ADMIN_LOGIN="${ADMIN_LOGIN:-}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 
 usage() {
@@ -22,8 +25,8 @@ Deploy zarplati on a Linux server with systemd.
 
 Usage:
   sudo bash scripts/deploy.sh
-  curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/deploy.sh \
-    | sudo bash -s -- --repo https://github.com/<owner>/<repo>.git
+  curl -fsSL https://raw.githubusercontent.com/NGPpQr0oWJ12/zarplati/main/scripts/deploy.sh \
+    | sudo bash -s -- --repo https://github.com/NGPpQr0oWJ12/zarplati.git
 
 Options:
   --mode deploy          Deployment mode. Only deploy is supported.
@@ -31,11 +34,13 @@ Options:
   --branch NAME          Git branch to deploy. Default: main.
   --port PORT            Local application port.
   --host HOST            Bind host. Default: 127.0.0.1.
-  --app-dir PATH         Code directory. Default: /opt/zarplati.
-  --storage-dir PATH     Data directory. Default: /var/lib/zarplati.
+  --app-home PATH        Base application home. Default: /home/zarplati.
+  --app-dir PATH         Code directory. Default: /home/zarplati/app.
+  --storage-dir PATH     Data directory. Default: /home/zarplati/data.
+  --env-file PATH        dotenv file. Default: /home/zarplati/config/.env.
   --service NAME         systemd service name. Default: zarplati.
-  --admin-login LOGIN    Admin login. Default: admin.
-  --admin-password PASS  Admin password. Generated when omitted.
+  --admin-login LOGIN    Admin login. Default: ikusova.
+  --admin-password PASS  Admin password. Default: 123!@#QWEqwe!!!.
 USAGE
 }
 
@@ -46,8 +51,10 @@ while [[ $# -gt 0 ]]; do
     --branch) BRANCH="${2:-}"; shift 2 ;;
     --port) PORT="${2:-}"; shift 2 ;;
     --host) HOST="${2:-}"; shift 2 ;;
+    --app-home) APP_HOME="${2:-}"; shift 2 ;;
     --app-dir) APP_DIR="${2:-}"; shift 2 ;;
     --storage-dir) STORAGE_DIR="${2:-}"; shift 2 ;;
+    --env-file) ENV_FILE="${2:-}"; ENV_DIR="$(dirname "$ENV_FILE")"; shift 2 ;;
     --service) SERVICE_NAME="${2:-}"; shift 2 ;;
     --admin-login) ADMIN_LOGIN="${2:-}"; shift 2 ;;
     --admin-password) ADMIN_PASSWORD="${2:-}"; shift 2 ;;
@@ -55,6 +62,12 @@ while [[ $# -gt 0 ]]; do
     *) echo "Unknown option: $1" >&2; usage; exit 2 ;;
   esac
 done
+
+APP_DIR="${APP_DIR:-${APP_HOME}/app}"
+STORAGE_DIR="${STORAGE_DIR:-${APP_HOME}/data}"
+ENV_DIR="${ENV_DIR:-${APP_HOME}/config}"
+ENV_FILE="${ENV_FILE:-${ENV_DIR}/.env}"
+ENV_DIR="$(dirname "$ENV_FILE")"
 
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
@@ -71,6 +84,10 @@ validate_port() {
   fi
 }
 
+can_prompt() {
+  [[ -r /dev/tty && -w /dev/tty ]]
+}
+
 prompt_if_empty() {
   local variable_name="$1"
   local prompt="$2"
@@ -79,7 +96,7 @@ prompt_if_empty() {
   if [[ -n "$current_value" ]]; then
     return
   fi
-  if [[ ! -t 0 ]]; then
+  if ! can_prompt; then
     if [[ -n "$default_value" ]]; then
       printf -v "$variable_name" '%s' "$default_value"
       return
@@ -90,10 +107,10 @@ prompt_if_empty() {
 
   local answer
   if [[ -n "$default_value" ]]; then
-    read -r -p "${prompt} [${default_value}]: " answer
+    read -r -p "${prompt} [${default_value}]: " answer < /dev/tty
     printf -v "$variable_name" '%s' "${answer:-$default_value}"
   else
-    read -r -p "${prompt}: " answer
+    read -r -p "${prompt}: " answer < /dev/tty
     printf -v "$variable_name" '%s' "$answer"
   fi
 }
@@ -102,18 +119,14 @@ prompt_password_if_empty() {
   if [[ -n "$ADMIN_PASSWORD" ]]; then
     return
   fi
-  if [[ -t 0 ]]; then
+  if can_prompt; then
     local answer
-    read -r -s -p "Admin password [auto-generate]: " answer
+    read -r -s -p "Admin password [default configured]: " answer < /dev/tty
     echo
-    ADMIN_PASSWORD="$answer"
+    ADMIN_PASSWORD="${answer:-$DEFAULT_ADMIN_PASSWORD}"
   fi
   if [[ -z "$ADMIN_PASSWORD" ]]; then
-    if command -v openssl >/dev/null 2>&1; then
-      ADMIN_PASSWORD="$(openssl rand -base64 24 | tr -d '\n')"
-    else
-      ADMIN_PASSWORD="change-me-$(date +%s)"
-    fi
+    ADMIN_PASSWORD="$DEFAULT_ADMIN_PASSWORD"
   fi
 }
 
@@ -208,13 +221,18 @@ create_user_and_dirs() {
     if [[ ! -x "$nologin_shell" && -x "/sbin/nologin" ]]; then
       nologin_shell="/sbin/nologin"
     fi
-    useradd --system --user-group --home "$APP_DIR" --shell "$nologin_shell" "$APP_USER"
+    useradd --system --user-group --home "$APP_HOME" --create-home --shell "$nologin_shell" "$APP_USER"
   fi
 
-  mkdir -p "$APP_DIR" "$STORAGE_DIR" "$ENV_DIR"
+  mkdir -p "$APP_HOME" "$APP_DIR" "$STORAGE_DIR" "$ENV_DIR"
+  chown "$APP_USER:$APP_USER" "$APP_HOME"
+  chmod 750 "$APP_HOME"
+  chown -R "$APP_USER:$APP_USER" "$APP_DIR"
   chown -R "$APP_USER:$APP_USER" "$STORAGE_DIR"
+  chown root:"$APP_USER" "$ENV_DIR"
+  chmod 750 "$ENV_DIR"
   chmod 750 "$STORAGE_DIR"
-  chmod 755 "$APP_DIR"
+  chmod 750 "$APP_DIR"
 }
 
 checkout_code() {
@@ -239,15 +257,23 @@ install_app() {
   chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 }
 
+quote_env_value() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/}"
+  printf '"%s"' "$value"
+}
+
 write_environment() {
   umask 077
   cat > "$ENV_FILE" <<ENV
 NODE_ENV=production
-HOST=${HOST}
+HOST=$(quote_env_value "$HOST")
 PORT=${PORT}
-STORAGE_DIR=${STORAGE_DIR}
-ADMIN_LOGIN=${ADMIN_LOGIN}
-ADMIN_PASSWORD=${ADMIN_PASSWORD}
+STORAGE_DIR=$(quote_env_value "$STORAGE_DIR")
+ADMIN_LOGIN=$(quote_env_value "$ADMIN_LOGIN")
+ADMIN_PASSWORD=$(quote_env_value "$ADMIN_PASSWORD")
 ENV
   chown root:"$APP_USER" "$ENV_FILE"
   chmod 640 "$ENV_FILE"
@@ -277,7 +303,7 @@ LogRateLimitIntervalSec=30
 LogRateLimitBurst=200
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectHome=true
+ProtectHome=false
 ProtectSystem=full
 ReadWritePaths=${STORAGE_DIR}
 
@@ -305,7 +331,7 @@ main() {
   prompt_if_empty REPO_URL "Public GitHub repo URL"
   prompt_if_empty PORT "Application port" "3000"
   validate_port "$PORT"
-  prompt_if_empty ADMIN_LOGIN "Admin login" "admin"
+  prompt_if_empty ADMIN_LOGIN "Admin login" "$DEFAULT_ADMIN_LOGIN"
   prompt_password_if_empty
 
   install_base_packages
@@ -321,6 +347,7 @@ main() {
 
 Deploy complete.
 Service: ${SERVICE_NAME}
+Home: ${APP_HOME}
 Code: ${APP_DIR}
 Data: ${STORAGE_DIR}
 Env: ${ENV_FILE}

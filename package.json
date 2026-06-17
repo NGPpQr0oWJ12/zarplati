@@ -14,6 +14,7 @@
     "@vitejs/plugin-react": "latest",
     "better-sqlite3": "latest",
     "cookie-parser": "latest",
+    "dotenv": "^17.4.2",
     "exceljs": "latest",
     "express": "latest",
     "multer": "latest",

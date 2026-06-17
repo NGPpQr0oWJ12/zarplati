@@ -27,10 +27,17 @@ PORT=3001 npm run dev
 
 ## Вход
 
-- Логин: `admin`
-- Пароль: `admin`
+- Логин: `ikusova`
+- Пароль: `123!@#QWEqwe!!!`
 
-Позже можно задать переменные окружения `ADMIN_LOGIN`, `ADMIN_PASSWORD`, `PORT`, `STORAGE_DIR`.
+Логин и пароль можно менять через `.env`:
+
+```dotenv
+ADMIN_LOGIN=ikusova
+ADMIN_PASSWORD="123!@#QWEqwe!!!"
+```
+
+Пароль с `#` нужно держать в кавычках. Для локального примера есть `.env.example`; реальный `.env` игнорируется Git.
 
 ## Формат импорта
 
@@ -81,15 +88,15 @@ curl -fsSL https://raw.githubusercontent.com/NGPpQr0oWJ12/zarplati/main/scripts/
     --mode deploy \
     --repo https://github.com/NGPpQr0oWJ12/zarplati.git \
     --port 3000 \
-    --admin-login admin \
-    --admin-password 'замените-на-свой-пароль'
+    --admin-login ikusova \
+    --admin-password '123!@#QWEqwe!!!'
 ```
 
 При установке скрипт:
 
-- клонирует код в `/opt/zarplati`;
-- хранит базу и подписи в `/var/lib/zarplati`;
-- пишет настройки в `/etc/zarplati/zarplati.env`;
+- клонирует код в `/home/zarplati/app`;
+- хранит базу и подписи в `/home/zarplati/data`;
+- пишет dotenv-настройки в `/home/zarplati/config/.env`;
 - создает `systemd`-сервис `zarplati`;
 - открывает введенный порт для TCP и UDP в активном `ufw` или `firewalld`, если такой firewall включен;
 - не пишет файловые runtime-логи, сервис уходит в `journald` с rate limit.
@@ -104,5 +111,5 @@ curl -fsSL https://raw.githubusercontent.com/NGPpQr0oWJ12/zarplati/main/scripts/
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/NGPpQr0oWJ12/zarplati/main/scripts/update.sh \
-  | sudo bash -s -- --app-dir /opt/zarplati --branch main --service zarplati
+  | sudo bash -s -- --app-dir /home/zarplati/app --branch main --service zarplati
 ```

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import cookieParser from 'cookie-parser';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync } from 'node:fs';
@@ -18,8 +19,8 @@ const databasePath = path.join(storageRoot, 'app.db');
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST || '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production' || process.argv.includes('--production');
-const adminLogin = process.env.ADMIN_LOGIN || 'admin';
-const adminPassword = process.env.ADMIN_PASSWORD || 'admin';
+const adminLogin = process.env.ADMIN_LOGIN || 'ikusova';
+const adminPassword = process.env.ADMIN_PASSWORD || '123!@#QWEqwe!!!';
 const sessions = new Map<string, { login: string; createdAt: number }>();
 
 mkdirSync(storageRoot, { recursive: true });
