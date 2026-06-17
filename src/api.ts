@@ -82,6 +82,12 @@ export const api = {
     return request<{ rows: PayoutRow[]; summary: PayoutSummary }>(`/api/payouts/${id}/import`, { method: 'POST', body: form });
   },
 
+  importBackup(file: File) {
+    const form = new FormData();
+    form.append('file', file);
+    return request<{ ok: boolean; payouts: PayoutListItem[] }>('/api/backup/import', { method: 'POST', body: form });
+  },
+
   signRow(payoutId: number, rowId: number, signatureDataUrl: string, paidAmount: number) {
     return request<{ row: PayoutRow }>(`/api/payouts/${payoutId}/rows/${rowId}/sign`, {
       method: 'POST',

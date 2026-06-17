@@ -1,5 +1,38 @@
 node_modules/
 dist/
 storage/
+.playwright-mcp/
+
+# Local secrets and machine-specific config
+.env
+.env.*
+!.env.example
+.npmrc
+*.local
+
+# Local databases and exported backups
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+zarplati-backup-*.json
+*-backup-*.json
+
+# Runtime and tool logs
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Test and coverage artifacts
+coverage/
+.nyc_output/
+.cache/
+.vite/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

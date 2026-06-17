@@ -27,6 +27,11 @@ export type PayoutListItem = Payout & {
   summary: PayoutSummary;
 };
 
+export type DatabaseExport = {
+  payouts: Payout[];
+  rows: PayoutRow[];
+};
+
 type PayoutRecord = {
   id: number;
   title: string;
@@ -143,6 +148,53 @@ export function createAppDatabase(databasePath: string) {
     listPayouts(): PayoutListItem[] {
       const payouts = (sqlite.prepare('SELECT * FROM payouts ORDER BY created_at DESC').all() as PayoutRecord[]).map(mapPayout);
       return payouts.map((payout) => ({ ...payout, summary: summarizeRows(listRows(payout.id)) }));
+    },
+
+    exportData(): DatabaseExport {
+      const payouts = (sqlite.prepare('SELECT * FROM payouts ORDER BY id ASC').all() as PayoutRecord[]).map(mapPayout);
+      const rows = (sqlite.prepare('SELECT * FROM payout_rows ORDER BY payout_id ASC, id ASC').all() as PayoutRowRecord[]).map(mapPayoutRow);
+      return { payouts, rows };
+    },
+
+    replaceAllData(input: DatabaseExport) {
+      const insertPayout = sqlite.prepare(`
+        INSERT INTO payouts (id, title, basis, status, created_at)
+        VALUES (@id, @title, @basis, @status, @createdAt)
+      `);
+      const insertRow = sqlite.prepare(`
+        INSERT INTO payout_rows (id, payout_id, full_name, amount, paid_amount, paid_at, signature_path, created_at)
+        VALUES (@id, @payoutId, @fullName, @amount, @paidAmount, @paidAt, @signaturePath, @createdAt)
+      `);
+      const replace = sqlite.transaction((data: DatabaseExport) => {
+        sqlite.prepare('DELETE FROM payout_rows').run();
+        sqlite.prepare('DELETE FROM payouts').run();
+        sqlite.prepare("DELETE FROM sqlite_sequence WHERE name IN ('payouts', 'payout_rows')").run();
+
+        for (const payout of data.payouts) {
+          insertPayout.run({
+            id: payout.id,
+            title: payout.title,
+            basis: payout.basis,
+            status: payout.status,
+            createdAt: payout.createdAt
+          });
+        }
+
+        for (const row of data.rows) {
+          insertRow.run({
+            id: row.id,
+            payoutId: row.payoutId,
+            fullName: row.fullName,
+            amount: row.amount,
+            paidAmount: row.paidAmount,
+            paidAt: row.paidAt,
+            signaturePath: row.signaturePath,
+            createdAt: row.createdAt
+          });
+        }
+      });
+
+      replace(input);
     },
 
     getPayout,

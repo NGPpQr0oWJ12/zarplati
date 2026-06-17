@@ -136,26 +136,103 @@ function PayoutsList({ payouts, selectedId, onSelect, onDelete }: { payouts: Pay
   );
 }
 
-function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) => void }) {
+function BackupPanel({ onImported }: { onImported: (payouts: PayoutListItem[]) => void }) {
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleBackupFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    event.target.value = '';
+    if (!window.confirm('Импорт заменит все текущие выплаты и подписи данными из файла. Продолжить?')) return;
+
+    setImporting(true);
+    setError('');
+    try {
+      const result = await api.importBackup(file);
+      onImported(result.payouts);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Не удалось импортировать резервную копию');
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  return (
+    <section className="backup-panel" aria-label="Резервная копия базы">
+      <div>
+        <h2>Перенос базы</h2>
+        <p className="muted">Экспортирует выплаты вместе с PNG-подписями. Импорт заменяет текущую локальную базу.</p>
+      </div>
+      <div className="backup-actions">
+        <a className="secondary-button" href="/api/backup/export">Экспорт базы</a>
+        <label className="file-input backup-file">
+          <input type="file" accept=".json,application/json" onChange={handleBackupFile} disabled={importing} />
+          <span>{importing ? 'Импорт базы' : 'Импорт базы'}</span>
+        </label>
+      </div>
+      {error && <p className="error-text">{error}</p>}
+    </section>
+  );
+}
+
+function SignaturePad({ fullName, onChange }: { fullName: string; onChange: (dataUrl: string | null) => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasStateRef = useRef<{ context: CanvasRenderingContext2D; rect: DOMRect; signatureLineY: number } | null>(null);
   const drawingRef = useRef(false);
   const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const hasInkRef = useRef(false);
   const [hasInk, setHasInk] = useState(false);
+
+  function drawPaper(context: CanvasRenderingContext2D, width: number, height: number) {
+    context.fillStyle = '#f7f4e9';
+    context.fillRect(0, 0, width, height);
+
+    context.fillStyle = 'rgba(17, 32, 48, 0.025)';
+    for (let y = 24; y < height; y += 24) context.fillRect(0, y, width, 1);
+
+    const signatureLineY = Math.max(190, height - 58);
+    const lineInset = Math.max(26, width * 0.06);
+    context.strokeStyle = 'rgba(22, 43, 72, 0.38)';
+    context.lineWidth = 1.35;
+    context.beginPath();
+    context.moveTo(lineInset, signatureLineY);
+    context.lineTo(width - lineInset, signatureLineY);
+    context.stroke();
+
+    context.fillStyle = 'rgba(22, 43, 72, 0.74)';
+    context.font = '600 15px "Geist", "Satoshi", "Plus Jakarta Sans", system-ui, sans-serif';
+    context.textAlign = 'center';
+    context.textBaseline = 'top';
+    context.fillText(fullName, width / 2, signatureLineY + 11, width - lineInset * 2);
+    return signatureLineY;
+  }
+
+  function applyPenStyle(context: CanvasRenderingContext2D) {
+    context.lineWidth = 2.35;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.strokeStyle = '#164c9f';
+    context.fillStyle = '#164c9f';
+    context.globalAlpha = 0.92;
+  }
 
   function setupCanvas() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
-    const ratio = window.devicePixelRatio || 1;
+    const ratio = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.floor(rect.width * ratio);
     canvas.height = Math.floor(rect.height * ratio);
-    const context = canvas.getContext('2d');
+    const context = canvas.getContext('2d', { alpha: false, desynchronized: true });
     if (!context) return;
-    context.scale(ratio, ratio);
-    context.lineWidth = 2.2;
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-    context.strokeStyle = '#18231d';
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    const signatureLineY = drawPaper(context, rect.width, rect.height);
+    applyPenStyle(context);
+    canvasStateRef.current = { context, rect, signatureLineY };
+    hasInkRef.current = false;
+    setHasInk(false);
+    onChange(null);
   }
 
   useEffect(() => {
@@ -164,11 +241,15 @@ function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) => void
     return () => window.removeEventListener('resize', setupCanvas);
   }, []);
 
-  function pointFromEvent(event: PointerEvent<HTMLCanvasElement>) {
+  function pointFromClient(clientX: number, clientY: number) {
     const canvas = canvasRef.current;
     if (!canvas) return null;
-    const rect = canvas.getBoundingClientRect();
-    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+    const rect = canvasStateRef.current?.rect ?? canvas.getBoundingClientRect();
+    const signatureLineY = canvasStateRef.current?.signatureLineY ?? rect.height - 58;
+    return {
+      x: Math.max(0, Math.min(rect.width, clientX - rect.left)),
+      y: Math.max(0, Math.min(signatureLineY - 4, clientY - rect.top))
+    };
   }
 
   function updateValue() {
@@ -178,29 +259,62 @@ function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) => void
     onChange(value);
   }
 
-  function handlePointerDown(event: PointerEvent<HTMLCanvasElement>) {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    drawingRef.current = true;
-    lastPointRef.current = pointFromEvent(event);
+  function markInk() {
+    if (hasInkRef.current) return;
+    hasInkRef.current = true;
+    setHasInk(true);
   }
 
-  function handlePointerMove(event: PointerEvent<HTMLCanvasElement>) {
-    if (!drawingRef.current) return;
-    const canvas = canvasRef.current;
-    const previous = lastPointRef.current;
-    const next = pointFromEvent(event);
-    const context = canvas?.getContext('2d');
-    if (!canvas || !context || !previous || !next) return;
+  function drawPoint(point: { x: number; y: number }) {
+    const context = canvasStateRef.current?.context;
+    if (!context) return;
+    applyPenStyle(context);
+    context.beginPath();
+    context.arc(point.x, point.y, 1.18, 0, Math.PI * 2);
+    context.fill();
+    markInk();
+  }
 
+  function drawLine(previous: { x: number; y: number }, next: { x: number; y: number }) {
+    const context = canvasStateRef.current?.context;
+    if (!context) return;
+    applyPenStyle(context);
     context.beginPath();
     context.moveTo(previous.x, previous.y);
     context.lineTo(next.x, next.y);
     context.stroke();
-    lastPointRef.current = next;
-    setHasInk(true);
-    updateValue();
+    markInk();
+  }
+
+  function handlePointerDown(event: PointerEvent<HTMLCanvasElement>) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drawingRef.current = true;
+    canvasStateRef.current = canvasStateRef.current
+      ? { ...canvasStateRef.current, rect: canvas.getBoundingClientRect() }
+      : canvasStateRef.current;
+    lastPointRef.current = pointFromClient(event.clientX, event.clientY);
+    if (lastPointRef.current) drawPoint(lastPointRef.current);
+  }
+
+  function handlePointerMove(event: PointerEvent<HTMLCanvasElement>) {
+    if (!drawingRef.current) return;
+    event.preventDefault();
+    const coalescedEvents = event.nativeEvent.getCoalescedEvents?.() ?? [];
+    const nativeEvents = coalescedEvents.length > 0 ? coalescedEvents : [event.nativeEvent];
+    let previous = lastPointRef.current;
+    if (!previous) return;
+
+    for (const nativeEvent of nativeEvents) {
+      const next = pointFromClient(nativeEvent.clientX, nativeEvent.clientY);
+      if (!next) continue;
+      drawLine(previous, next);
+      previous = next;
+    }
+
+    lastPointRef.current = previous;
   }
 
   function handlePointerUp(event: PointerEvent<HTMLCanvasElement>) {
@@ -217,6 +331,7 @@ function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) => void
     const context = canvas?.getContext('2d');
     if (!canvas || !context) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
+    hasInkRef.current = false;
     setHasInk(false);
     onChange(null);
     setupCanvas();
@@ -230,6 +345,7 @@ function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) => void
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
+        onContextMenu={(event) => event.preventDefault()}
         aria-label="Поле подписи"
       />
       <div className="signature-actions">
@@ -307,7 +423,7 @@ function SignatureModal({ row, payoutId, onClose, onSigned }: { row: PayoutRow; 
               </label>
               <div><span>Остаток после подписи</span><strong>{formatMoney(draftRemainder)}</strong></div>
             </div>
-            <SignaturePad onChange={setSignature} />
+            <SignaturePad fullName={row.fullName} onChange={setSignature} />
           </>
         )}
         {error && <p className="error-text">{error}</p>}
@@ -590,6 +706,16 @@ export function App() {
     }
   }
 
+  async function handleBackupImported(importedPayouts: PayoutListItem[]) {
+    setPayouts(importedPayouts);
+    const nextId = importedPayouts[0]?.id ?? null;
+    if (nextId) {
+      await loadPayout(nextId);
+      return;
+    }
+    setActive(null);
+  }
+
   if (checking) return <main className="loading-screen">Загрузка</main>;
   if (!authenticated) return <LoginScreen onLogin={handleLogin} />;
 
@@ -606,6 +732,7 @@ export function App() {
       <div className="workspace">
         <section className="sidebar-panel">
           <CreatePayoutForm onCreated={handleCreated} />
+          <BackupPanel onImported={handleBackupImported} />
           <PayoutsList payouts={payouts} selectedId={active?.payout.id ?? null} onSelect={safeLoadPayout} onDelete={handleDeletePayout} />
         </section>
         {error && <p className="error-text">{error}</p>}

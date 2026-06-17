@@ -5,6 +5,7 @@ import { networkInterfaces } from 'node:os';
 import path from 'node:path';
 import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
+import { createBackupPayload, parseBackupPayload, stageBackupSignatures } from './backup';
 import { createAppDatabase } from './database';
 import { parseImportWorkbook } from './importer';
 import { buildPayoutReport } from './report';
@@ -15,6 +16,7 @@ const appRoot = process.cwd();
 const storageRoot = process.env.STORAGE_DIR ? path.resolve(process.env.STORAGE_DIR) : path.join(appRoot, 'storage');
 const databasePath = path.join(storageRoot, 'app.db');
 const port = Number(process.env.PORT ?? 3000);
+const host = process.env.HOST || '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production' || process.argv.includes('--production');
 const adminLogin = process.env.ADMIN_LOGIN || 'admin';
 const adminPassword = process.env.ADMIN_PASSWORD || 'admin';
@@ -23,6 +25,7 @@ const sessions = new Map<string, { login: string; createdAt: number }>();
 mkdirSync(storageRoot, { recursive: true });
 const db = createAppDatabase(databasePath);
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
+const backupUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 128 * 1024 * 1024 } });
 
 function createSession(login: string) {
   const token = crypto.randomUUID();
@@ -60,7 +63,9 @@ function toPublicRow(row: ReturnType<typeof db.listRows>[number]) {
 }
 
 function localNetworkUrls() {
-  const urls = [`http://localhost:${port}`];
+  const urls = [`http://${host === '0.0.0.0' ? 'localhost' : host}:${port}`];
+  if (host !== '0.0.0.0') return urls;
+
   const interfaces = networkInterfaces();
   for (const addresses of Object.values(interfaces)) {
     for (const address of addresses ?? []) {
@@ -116,6 +121,29 @@ async function main() {
 
   app.get('/api/payouts', requireAuth, (req, res) => {
     res.json({ payouts: db.listPayouts() });
+  });
+
+  app.get('/api/backup/export', requireAuth, (req, res) => {
+    const payload = createBackupPayload({ storageRoot, database: db.exportData() });
+    const fileName = encodeURIComponent(`zarplati-backup-${new Date().toISOString().slice(0, 10)}.json`);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${fileName}`);
+    res.send(Buffer.from(JSON.stringify(payload, null, 2), 'utf8'));
+  });
+
+  app.post('/api/backup/import', requireAuth, backupUpload.single('file'), (req, res) => {
+    if (!req.file) throw new Error('Загрузите файл резервной копии');
+    const backup = parseBackupPayload(req.file.buffer);
+    const stagedSignatures = stageBackupSignatures(storageRoot, backup.signatures);
+
+    try {
+      db.replaceAllData(backup.database);
+      stagedSignatures.commit();
+    } finally {
+      stagedSignatures.cleanup();
+    }
+
+    res.json({ ok: true, payouts: db.listPayouts() });
   });
 
   app.post('/api/payouts', requireAuth, (req, res) => {
@@ -225,7 +253,7 @@ async function main() {
     }));
   }
 
-  app.listen(port, '0.0.0.0', () => {
+  app.listen(port, host, () => {
     process.stdout.write(`Выплаты доступны:\n${localNetworkUrls().map((url) => `- ${url}`).join('\n')}\n`);
   });
 }

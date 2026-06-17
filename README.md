@@ -46,3 +46,51 @@ PORT=3001 npm run dev
 - SQLite-база: `storage/app.db`
 - Подписи: `storage/signatures/`
 - Отчеты не накапливаются, а генерируются при скачивании.
+
+## Перенос на другой сервер
+
+В боковой панели есть блок `Перенос базы`.
+
+- `Экспорт базы` скачивает JSON-резервную копию со всеми выплатами, строками и PNG-подписями.
+- `Импорт базы` загружает такой JSON на новом сервере и заменяет текущую локальную базу вместе с подписями.
+
+## Логи
+
+Приложение не пишет access/request-логи в файлы и не накапливает собственные runtime-логи. В штатном режиме сервер выводит в `stdout` только адреса при запуске, а в `stderr` — только критическую ошибку запуска.
+
+Если приложение запускается через внешний стек, который сохраняет `stdout`/`stderr` в файлы, включите ротацию на стороне этого стека: лимит 1-2 МБ на файл и 2-3 старых файла достаточно для этой локальной ведомости. Например, для PM2 используйте `pm2-logrotate` с `max_size=1M` и `retain=3`; для Docker ограничивайте `json-file` через `max-size` и `max-file`.
+
+## Автодеплой с GitHub
+
+Скрипты лежат в `scripts/deploy.sh` и `scripts/update.sh`. Они рассчитаны на Linux-сервер с `systemd` и публичный GitHub-репозиторий.
+
+Установка из GitHub:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/deploy.sh \
+  | sudo bash -s -- --repo https://github.com/<owner>/<repo>.git
+```
+
+В интерактивном CLI-режиме скрипт попросит режим `deploy`, порт приложения, логин и пароль администратора. По умолчанию production-сервис слушает `127.0.0.1`, то есть приложение доступно только локально на сервере: `http://127.0.0.1:<порт>`.
+
+При установке скрипт:
+
+- клонирует код в `/opt/zarplati`;
+- хранит базу и подписи в `/var/lib/zarplati`;
+- пишет настройки в `/etc/zarplati/zarplati.env`;
+- создает `systemd`-сервис `zarplati`;
+- открывает введенный порт для TCP и UDP в активном `ufw` или `firewalld`, если такой firewall включен;
+- не пишет файловые runtime-логи, сервис уходит в `journald` с rate limit.
+
+Обновление уже установленного сервера:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/update.sh | sudo bash
+```
+
+Если используются нестандартные путь, ветка или имя сервиса:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/<owner>/<repo>/main/scripts/update.sh \
+  | sudo bash -s -- --app-dir /opt/zarplati --branch main --service zarplati
+```
