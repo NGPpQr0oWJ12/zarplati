@@ -19,8 +19,17 @@ const databasePath = path.join(storageRoot, 'app.db');
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST || '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production' || process.argv.includes('--production');
-const adminLogin = process.env.ADMIN_LOGIN || 'ikusova';
-const adminPassword = process.env.ADMIN_PASSWORD || '123!@#QWEqwe!!!';
+
+function requireEnv(name: 'ADMIN_LOGIN' | 'ADMIN_PASSWORD') {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`${name} must be set in .env or environment variables.`);
+  }
+  return value;
+}
+
+const adminLogin = requireEnv('ADMIN_LOGIN');
+const adminPassword = requireEnv('ADMIN_PASSWORD');
 const sessions = new Map<string, { login: string; createdAt: number }>();
 
 mkdirSync(storageRoot, { recursive: true });

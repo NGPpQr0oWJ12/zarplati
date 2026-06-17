@@ -14,8 +14,6 @@ HOST="${HOST:-127.0.0.1}"
 PORT="${PORT:-}"
 MODE="${MODE:-}"
 REPO_URL="${REPO_URL:-}"
-DEFAULT_ADMIN_LOGIN="${DEFAULT_ADMIN_LOGIN:-ikusova}"
-DEFAULT_ADMIN_PASSWORD="${DEFAULT_ADMIN_PASSWORD:-123!@#QWEqwe!!!}"
 ADMIN_LOGIN="${ADMIN_LOGIN:-}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 
@@ -39,8 +37,8 @@ Options:
   --storage-dir PATH     Data directory. Default: /home/zarplati/data.
   --env-file PATH        dotenv file. Default: /home/zarplati/config/.env.
   --service NAME         systemd service name. Default: zarplati.
-  --admin-login LOGIN    Admin login. Default: ikusova.
-  --admin-password PASS  Admin password. Default: 123!@#QWEqwe!!!.
+  --admin-login LOGIN    Admin login. Required.
+  --admin-password PASS  Admin password. Required.
 USAGE
 }
 
@@ -119,15 +117,16 @@ prompt_password_if_empty() {
   if [[ -n "$ADMIN_PASSWORD" ]]; then
     return
   fi
-  if can_prompt; then
-    local answer
-    read -r -s -p "Admin password [default configured]: " answer < /dev/tty
+  if ! can_prompt; then
+    echo "Missing required value: ADMIN_PASSWORD" >&2
+    exit 1
+  fi
+  local answer
+  while [[ -z "$answer" ]]; do
+    read -r -s -p "Admin password: " answer < /dev/tty
     echo
-    ADMIN_PASSWORD="${answer:-$DEFAULT_ADMIN_PASSWORD}"
-  fi
-  if [[ -z "$ADMIN_PASSWORD" ]]; then
-    ADMIN_PASSWORD="$DEFAULT_ADMIN_PASSWORD"
-  fi
+  done
+  ADMIN_PASSWORD="$answer"
 }
 
 detect_repo_url() {
@@ -331,7 +330,7 @@ main() {
   prompt_if_empty REPO_URL "Public GitHub repo URL"
   prompt_if_empty PORT "Application port" "3000"
   validate_port "$PORT"
-  prompt_if_empty ADMIN_LOGIN "Admin login" "$DEFAULT_ADMIN_LOGIN"
+  prompt_if_empty ADMIN_LOGIN "Admin login"
   prompt_password_if_empty
 
   install_base_packages
@@ -353,7 +352,7 @@ Data: ${STORAGE_DIR}
 Env: ${ENV_FILE}
 URL: http://${HOST}:${PORT}
 Admin login: ${ADMIN_LOGIN}
-Admin password: ${ADMIN_PASSWORD}
+Admin password: saved to ${ENV_FILE}
 
 Useful commands:
   systemctl status ${SERVICE_NAME}

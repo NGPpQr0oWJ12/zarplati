@@ -27,14 +27,11 @@ PORT=3001 npm run dev
 
 ## Вход
 
-- Логин: `ikusova`
-- Пароль: `123!@#QWEqwe!!!`
-
-Логин и пароль можно менять через `.env`:
+Логин и пароль задаются только через `.env` или переменные окружения:
 
 ```dotenv
-ADMIN_LOGIN=ikusova
-ADMIN_PASSWORD="123!@#QWEqwe!!!"
+ADMIN_LOGIN=your-admin-login
+ADMIN_PASSWORD="your-strong-password"
 ```
 
 Пароль с `#` нужно держать в кавычках. Для локального примера есть `.env.example`; реальный `.env` игнорируется Git.
@@ -88,8 +85,8 @@ curl -fsSL https://raw.githubusercontent.com/NGPpQr0oWJ12/zarplati/main/scripts/
     --mode deploy \
     --repo https://github.com/NGPpQr0oWJ12/zarplati.git \
     --port 3000 \
-    --admin-login ikusova \
-    --admin-password '123!@#QWEqwe!!!'
+    --admin-login 'your-admin-login' \
+    --admin-password 'your-strong-password'
 ```
 
 При установке скрипт:
