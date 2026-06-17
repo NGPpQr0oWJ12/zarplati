@@ -337,9 +337,14 @@ git_app() {
   git -c "safe.directory=${APP_DIR}" -C "$APP_DIR" "$@"
 }
 
+trust_app_checkout() {
+  git config --global --add safe.directory "$APP_DIR" || true
+}
+
 checkout_code() {
   if [[ -d "$APP_DIR/.git" ]]; then
     echo "Обновляется существующая копия в ${APP_DIR}."
+    trust_app_checkout
     git_app fetch --prune origin
     git_app checkout "$BRANCH"
     git_app reset --hard "origin/${BRANCH}"

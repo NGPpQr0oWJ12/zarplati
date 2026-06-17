@@ -40,6 +40,10 @@ git_app() {
   git -c "safe.directory=${APP_DIR}" -C "$APP_DIR" "$@"
 }
 
+trust_app_checkout() {
+  git config --global --add safe.directory "$APP_DIR" || true
+}
+
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Запустите скрипт от root: sudo bash scripts/update.sh" >&2
   exit 1
@@ -56,6 +60,7 @@ if ! systemctl cat "${SERVICE_NAME}.service" >/dev/null 2>&1; then
 fi
 
 echo "Обновляется код из ветки ${BRANCH}."
+trust_app_checkout
 git_app fetch --prune origin
 git_app checkout "$BRANCH"
 git_app reset --hard "origin/${BRANCH}"
